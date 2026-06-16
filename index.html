@@ -67,7 +67,7 @@
     <button class="btn sm" onclick="addPlace()">+ 장소 추가</button>
   </div>
 
-  <button class="btn" onclick="createEvent()">링크 만들기 →</button>
+  <button class="btn" onclick="submitEvent()">링크 만들기 →</button>
   <div class="err" id="err"></div>
 
   <div class="card links" id="result" style="display:none">
@@ -106,7 +106,7 @@ addPlace("정문",2,3,"09:00","21:00",true);
 addPlace("후문",1,2,"09:00","17:00",false);
 addPlace("주차장",1,1,"09:00","17:00",false);
 
-async function createEvent(){
+async function submitEvent(){
   document.getElementById("err").textContent="";
   const places=[...document.querySelectorAll("#places tr")].map(tr=>({
     name:tr.querySelector(".p-name").value.trim(),
