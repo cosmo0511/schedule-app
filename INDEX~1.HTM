@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>시간표 만들기</title>
+<style>
+  :root{--c:#2563eb;--bg:#f5f7fb;--line:#dbe1ea;}
+  *{box-sizing:border-box;font-family:system-ui,'Malgun Gothic',sans-serif;}
+  body{margin:0;background:var(--bg);color:#1a2233;}
+  .wrap{max-width:720px;margin:0 auto;padding:24px 16px 60px;}
+  h1{font-size:22px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px;}
+  label{display:block;font-weight:600;font-size:14px;margin:12px 0 4px;}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;}
+  .row>div{flex:1;min-width:120px;}
+  .days{display:flex;gap:6px;flex-wrap:wrap;}
+  .day-chip{padding:8px 12px;border:1px solid var(--line);border-radius:20px;cursor:pointer;user-select:none;font-size:14px;}
+  .day-chip.on{background:var(--c);color:#fff;border-color:var(--c);}
+  table{width:100%;border-collapse:collapse;margin-top:6px;}
+  th,td{padding:6px;font-size:13px;text-align:left;}
+  th{color:#5b6577;font-weight:600;}
+  td input{padding:6px 8px;}
+  .btn{background:var(--c);color:#fff;border:none;border-radius:8px;padding:12px 18px;font-size:15px;font-weight:600;cursor:pointer;}
+  .btn.sm{padding:6px 12px;font-size:13px;background:#eef2f9;color:var(--c);}
+  .btn.danger{background:#fde8e8;color:#d33;}
+  .hint{color:#7a8699;font-size:12px;margin-top:4px;}
+  .links a{display:block;background:#eef4ff;border:1px solid #cfe0ff;border-radius:8px;padding:12px;margin:8px 0;color:var(--c);word-break:break-all;text-decoration:none;}
+  .err{color:#d33;font-size:13px;margin-top:8px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>⏱️ 시간표 자동 배정 만들기</h1>
+  <p class="hint">설정을 입력하고 링크를 만들면, 참가자들이 가능 시간을 제출하고 자동으로 배정돼요.</p>
+
+  <div class="card">
+    <label>제목</label>
+    <input id="title" value="근무 시간표">
+
+    <label>요일</label>
+    <div class="days" id="days"></div>
+
+    <div class="row">
+      <div><label>운영 시작</label><input id="day_start" type="time" value="09:00"></div>
+      <div><label>운영 종료</label><input id="day_end" type="time" value="21:00"></div>
+      <div><label>한 칸(분)</label>
+        <select id="slot_minutes"><option>30</option><option selected>60</option><option>120</option></select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div><label>1인 최소 연속 근무(시간)</label><input id="min_run" type="number" step="0.5" value="3"></div>
+      <div><label>1인 하루 최대(시간)</label><input id="max_day" type="number" step="0.5" value="8"></div>
+    </div>
+    <p class="hint">한 장소에 들어가면 최소 연속 시간 이상 근무해요. 토막 근무는 생기지 않아요.</p>
+  </div>
+
+  <div class="card">
+    <label>장소 (정원·우선순위·운영시간·필수)</label>
+    <p class="hint">우선순위가 높을수록(숫자 큼) 사람이 부족할 때 먼저 채워져요. <b>필수</b>를 체크하면 모든 참가자가 그 장소에서 최소 1회(연속 최소시간) 근무하게 돼요.</p>
+    <table>
+      <thead><tr><th>장소명</th><th>정원</th><th>우선순위</th><th>운영시작</th><th>운영종료</th><th>필수</th><th></th></tr></thead>
+      <tbody id="places"></tbody>
+    </table>
+    <button class="btn sm" onclick="addPlace()">+ 장소 추가</button>
+  </div>
+
+  <button class="btn" onclick="createEvent()">링크 만들기 →</button>
+  <div class="err" id="err"></div>
+
+  <div class="card links" id="result" style="display:none">
+    <h3>✅ 만들어졌어요!</h3>
+    <p class="hint">참가자에게 아래 <b>참가자 링크</b>를 공유하세요. <b>관리자 링크</b>는 본인만 보관하세요(배정 실행용).</p>
+    <div><b>참가자 링크</b><a id="plink" target="_blank"></a></div>
+    <div><b>관리자 링크</b><a id="alink" target="_blank"></a></div>
+  </div>
+</div>
+
+<script>
+const DAYS=["월","화","수","목","금","토","일"];
+const onDays=new Set(["월","화","수","목","금"]);
+const daysEl=document.getElementById("days");
+DAYS.forEach(d=>{
+  const c=document.createElement("div");
+  c.className="day-chip"+(onDays.has(d)?" on":""); c.textContent=d;
+  c.onclick=()=>{c.classList.toggle("on"); c.classList.contains("on")?onDays.add(d):onDays.delete(d);};
+  daysEl.appendChild(c);
+});
+
+function addPlace(name="",cap=1,pri=1,s="09:00",e="21:00",req=false){
+  const tr=document.createElement("tr");
+  tr.innerHTML=`
+    <td><input class="p-name" value="${name}" placeholder="예: 정문"></td>
+    <td><input class="p-cap" type="number" min="1" value="${cap}" style="width:60px"></td>
+    <td><input class="p-pri" type="number" min="1" value="${pri}" style="width:60px"></td>
+    <td><input class="p-s" type="time" value="${s}"></td>
+    <td><input class="p-e" type="time" value="${e}"></td>
+    <td style="text-align:center"><input class="p-req" type="checkbox" ${req?"checked":""}></td>
+    <td><button class="btn sm danger" onclick="this.closest('tr').remove()">×</button></td>`;
+  document.getElementById("places").appendChild(tr);
+}
+// 기본 예시 3장소 (정문 필수)
+addPlace("정문",2,3,"09:00","21:00",true);
+addPlace("후문",1,2,"09:00","17:00",false);
+addPlace("주차장",1,1,"09:00","17:00",false);
+
+async function createEvent(){
+  document.getElementById("err").textContent="";
+  const places=[...document.querySelectorAll("#places tr")].map(tr=>({
+    name:tr.querySelector(".p-name").value.trim(),
+    cap:+tr.querySelector(".p-cap").value,
+    priority:+tr.querySelector(".p-pri").value,
+    op_start:tr.querySelector(".p-s").value,
+    op_end:tr.querySelector(".p-e").value,
+    required:tr.querySelector(".p-req").checked,
+  })).filter(p=>p.name);
+  if(!places.length){document.getElementById("err").textContent="장소를 1개 이상 추가하세요.";return;}
+  const body={
+    title:document.getElementById("title").value,
+    days:DAYS.filter(d=>onDays.has(d)),
+    day_start:document.getElementById("day_start").value,
+    day_end:document.getElementById("day_end").value,
+    slot_minutes:+document.getElementById("slot_minutes").value,
+    min_run_hours:+document.getElementById("min_run").value,
+    max_day_hours:+document.getElementById("max_day").value,
+    places
+  };
+  const r=await fetch("/api/events",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(!r.ok){document.getElementById("err").textContent=(await r.json()).detail||"오류가 발생했어요.";return;}
+  const d=await r.json();
+  const base=location.origin;
+  const pl=`${base}/e/${d.event_id}`;
+  const al=`${base}/admin/${d.event_id}?token=${d.admin_token}`;
+  document.getElementById("plink").textContent=pl; document.getElementById("plink").href=pl;
+  document.getElementById("alink").textContent=al; document.getElementById("alink").href=al;
+  document.getElementById("result").style.display="block";
+  document.getElementById("result").scrollIntoView({behavior:"smooth"});
+}
+</script>
+</body>
+</html>

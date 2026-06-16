@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>가능 시간 제출</title>
+<style>
+  *{box-sizing:border-box;font-family:system-ui,'Malgun Gothic',sans-serif;-webkit-user-select:none;user-select:none;}
+  body{margin:0;background:#f5f7fb;color:#1a2233;}
+  .wrap{max-width:760px;margin:0 auto;padding:20px 14px 80px;}
+  h1{font-size:20px;}
+  .card{background:#fff;border:1px solid #dbe1ea;border-radius:12px;padding:16px;margin-bottom:14px;}
+  label{font-weight:600;font-size:14px;}
+  input.name{width:100%;padding:10px;border:1px solid #dbe1ea;border-radius:8px;font-size:15px;margin-top:6px;}
+  .hint{color:#7a8699;font-size:12px;}
+  table{border-collapse:collapse;width:100%;margin-top:8px;}
+  th,td{border:1px solid #e3e8f0;text-align:center;font-size:12px;}
+  th{background:#f0f3f9;padding:6px 2px;color:#5b6577;}
+  td.time{background:#f7f9fc;color:#7a8699;white-space:nowrap;padding:2px 6px;font-size:11px;}
+  td.cell{height:26px;cursor:pointer;background:#fff;}
+  td.cell.on{background:#22c55e;}
+  .btn{position:fixed;left:0;right:0;bottom:0;background:#2563eb;color:#fff;border:none;padding:16px;font-size:16px;font-weight:700;cursor:pointer;}
+  .msg{padding:10px;border-radius:8px;font-size:14px;margin-top:8px;}
+  .ok{background:#e7f8ee;color:#138a4a;} .err{background:#fde8e8;color:#d33;}
+  .scroll{overflow-x:auto;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title">가능 시간 제출</h1>
+  <p class="hint">근무 가능한 시간을 드래그해서 칠하세요. 다시 드래그하면 지워져요.</p>
+
+  <div class="card">
+    <label>이름</label>
+    <input class="name" id="name" placeholder="이름을 입력하세요">
+  </div>
+
+  <div class="card scroll">
+    <table id="grid"></table>
+  </div>
+  <div id="msg"></div>
+</div>
+<button class="btn" onclick="submitAvail()">제출하기</button>
+
+<script>
+const eid=location.pathname.split("/").pop();
+let cfg=null, nT=0, selected=new Set();
+
+async function load(){
+  const r=await fetch(`/api/events/${eid}`);
+  if(!r.ok){document.body.innerHTML="<p style='padding:20px'>이벤트를 찾을 수 없어요.</p>";return;}
+  const d=await r.json(); cfg=d.config; nT=cfg.times.length;
+  document.getElementById("title").textContent=d.title+" — 가능 시간 제출";
+  buildGrid();
+}
+
+function buildGrid(){
+  const days=cfg.days, times=cfg.times;
+  let html="<tr><th></th>"+days.map(d=>`<th>${d}</th>`).join("")+"</tr>";
+  times.forEach((t,ri)=>{
+    html+=`<tr><td class="time">${t.label}</td>`;
+    days.forEach((d,di)=>{
+      const s=di*nT+ri;
+      html+=`<td class="cell" data-s="${s}"></td>`;
+    });
+    html+="</tr>";
+  });
+  const g=document.getElementById("grid"); g.innerHTML=html;
+
+  let painting=false, mode=true;
+  function apply(td){
+    const s=+td.dataset.s;
+    if(mode){selected.add(s);td.classList.add("on");}
+    else{selected.delete(s);td.classList.remove("on");}
+  }
+  g.querySelectorAll("td.cell").forEach(td=>{
+    td.addEventListener("mousedown",e=>{e.preventDefault();painting=true;mode=!td.classList.contains("on");apply(td);});
+    td.addEventListener("mouseenter",()=>{if(painting)apply(td);});
+    // 터치
+    td.addEventListener("touchstart",e=>{e.preventDefault();painting=true;mode=!td.classList.contains("on");apply(td);},{passive:false});
+  });
+  g.addEventListener("touchmove",e=>{
+    if(!painting)return; e.preventDefault();
+    const t=e.touches[0]; const el=document.elementFromPoint(t.clientX,t.clientY);
+    if(el&&el.classList.contains("cell"))apply(el);
+  },{passive:false});
+  document.addEventListener("mouseup",()=>painting=false);
+  document.addEventListener("touchend",()=>painting=false);
+}
+
+async function submitAvail(){
+  const name=document.getElementById("name").value.trim();
+  const msg=document.getElementById("msg");
+  if(!name){msg.className="msg err";msg.textContent="이름을 입력해주세요.";return;}
+  if(!selected.size){msg.className="msg err";msg.textContent="가능한 시간을 한 칸 이상 선택해주세요.";return;}
+  const r=await fetch(`/api/events/${eid}/participants`,{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name,slots:[...selected]})});
+  if(r.ok){msg.className="msg ok";msg.textContent=`✅ ${name}님 제출 완료! (${selected.size}칸) — 같은 이름으로 다시 제출하면 덮어써져요.`;}
+  else{msg.className="msg err";msg.textContent=(await r.json()).detail||"오류가 발생했어요.";}
+}
+load();
+</script>
+</body>
+</html>

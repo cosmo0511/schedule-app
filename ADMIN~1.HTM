@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>관리자 — 배정</title>
+<style>
+  *{box-sizing:border-box;font-family:system-ui,'Malgun Gothic',sans-serif;}
+  body{margin:0;background:#f5f7fb;color:#1a2233;}
+  .wrap{max-width:1000px;margin:0 auto;padding:20px 14px 60px;}
+  h1{font-size:21px;} h2{font-size:16px;margin-top:24px;}
+  .card{background:#fff;border:1px solid #dbe1ea;border-radius:12px;padding:16px;margin-bottom:14px;}
+  .hint{color:#7a8699;font-size:12px;}
+  .plink{background:#eef4ff;border:1px solid #cfe0ff;border-radius:8px;padding:10px;word-break:break-all;color:#2563eb;display:block;text-decoration:none;}
+  .btn{background:#2563eb;color:#fff;border:none;border-radius:8px;padding:12px 20px;font-size:15px;font-weight:600;cursor:pointer;}
+  .btn:disabled{opacity:.5;cursor:wait;}
+  .ptag{display:inline-block;background:#eef2f9;border-radius:16px;padding:5px 12px;margin:3px;font-size:13px;}
+  table.tt{border-collapse:collapse;margin:6px 0 18px;}
+  table.tt th,table.tt td{border:1px solid #e3e8f0;font-size:12px;text-align:center;padding:4px 6px;min-width:90px;}
+  table.tt th{background:#dbeafe;}
+  td.time{background:#f7f9fc;color:#7a8699;white-space:nowrap;}
+  td.fill{background:#dcfce7;} td.blank{background:#fde8e8;color:#d33;} td.closed{background:#9ca3af;color:#fff;}
+  table.sum{border-collapse:collapse;} table.sum th,table.sum td{border:1px solid #e3e8f0;padding:5px 10px;font-size:13px;text-align:center;}
+  .msg{padding:10px;border-radius:8px;font-size:14px;margin-top:8px;}
+  .err{background:#fde8e8;color:#d33;} .scroll{overflow-x:auto;}
+  .day-block{margin-bottom:10px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title">관리자 화면</h1>
+
+  <div class="card">
+    <b>참가자 공유 링크</b>
+    <p class="hint">이 링크를 참가자들에게 보내세요.</p>
+    <a class="plink" id="plink" target="_blank"></a>
+  </div>
+
+  <div class="card">
+    <b>제출 현황</b> <span class="hint">(새로고침하면 갱신)</span>
+    <div id="parts" style="margin-top:8px"></div>
+  </div>
+
+  <button class="btn" id="solveBtn" onclick="solve()">⚙️ 배정 실행</button>
+  <div id="msg"></div>
+
+  <div id="resultArea"></div>
+</div>
+
+<script>
+const parts=location.pathname.split("/");
+const eid=parts[parts.length-1];
+const token=new URLSearchParams(location.search).get("token")||"";
+let cfg=null,nT=0;
+
+async function load(){
+  const r=await fetch(`/api/events/${eid}`);
+  if(!r.ok){document.body.innerHTML="<p style='padding:20px'>이벤트를 찾을 수 없어요.</p>";return;}
+  const d=await r.json(); cfg=d.config; nT=cfg.times.length;
+  document.getElementById("title").textContent=d.title+" — 관리자";
+  const pl=`${location.origin}/e/${eid}`;
+  document.getElementById("plink").textContent=pl; document.getElementById("plink").href=pl;
+  loadParts();
+  const ex=await (await fetch(`/api/events/${eid}/result`)).json();
+  if(ex.solved) renderResult(ex.result);
+}
+
+async function loadParts(){
+  const ps=await (await fetch(`/api/events/${eid}/participants`)).json();
+  const el=document.getElementById("parts");
+  el.innerHTML = ps.length? ps.map(p=>`<span class="ptag">${p.name} · ${p.slots.length}칸</span>`).join("")
+                          : "<span class='hint'>아직 제출한 사람이 없어요.</span>";
+}
+
+async function solve(){
+  const btn=document.getElementById("solveBtn"); const msg=document.getElementById("msg");
+  btn.disabled=true; btn.textContent="배정 계산 중...(최대 30초)"; msg.textContent="";
+  const r=await fetch(`/api/events/${eid}/solve?token=${encodeURIComponent(token)}`,{method:"POST"});
+  btn.disabled=false; btn.textContent="⚙️ 배정 실행";
+  if(!r.ok){msg.className="msg err";msg.textContent=(await r.json()).detail||"오류";return;}
+  renderResult(await r.json());
+}
+
+function renderResult(res){
+  const area=document.getElementById("resultArea");
+  if(!res.feasible){area.innerHTML="<div class='msg err'>조건을 만족하는 배정을 찾지 못했어요. 제약을 완화해보세요.</div>";return;}
+  const days=cfg.days,times=cfg.times,places=cfg.places;
+  let html=`<h2>📋 배정 결과 <a class="btn" style="font-size:13px;padding:8px 14px;text-decoration:none" href="/api/events/${eid}/export.xlsx">⬇ 엑셀 내보내기</a></h2>`;
+  if(res.unmet_required && res.unmet_required.length){
+    html+="<div class='msg err'>⚠️ 필수 장소를 못 채운 사람: "
+      + res.unmet_required.map(u=>`${u.name}(${u.place})`).join(", ")
+      + " — 해당 장소 운영시간에 연속 근무 가능시간이 부족해요.</div>";
+  }
+  days.forEach((dn,di)=>{
+    html+=`<div class="day-block scroll"><b>${dn}요일</b><br><table class="tt"><tr><th></th>`;
+    places.forEach(p=>html+=`<th>${p.name}(${p.cap})</th>`); html+="</tr>";
+    times.forEach((t,ri)=>{
+      const s=di*nT+ri;
+      html+=`<tr><td class="time">${t.label}</td>`;
+      places.forEach((p,pi)=>{
+        if(!p.rows.includes(ri)){html+=`<td class="closed">운영X</td>`;return;}
+        const who=res.assign[`${s}_${pi}`]||[];
+        html+= who.length? `<td class="fill">${who.join(", ")}</td>` : `<td class="blank">·</td>`;
+      });
+      html+="</tr>";
+    });
+    html+="</table></div>";
+  });
+  // 사람별 근무시간
+  html+="<h2>⏰ 사람별 근무</h2><div class='scroll'><table class='sum'><tr><th>이름</th>";
+  days.forEach(d=>html+=`<th>${d}</th>`); html+="<th>총(시간)</th></tr>";
+  const slotH=cfg.slot_minutes/60;
+  Object.keys(res.loads).forEach(name=>{
+    html+=`<tr><td><b>${name}</b></td>`;
+    days.forEach((d,di)=>{
+      let c=0;
+      for(let ri=0;ri<nT;ri++){const s=di*nT+ri;
+        places.forEach((p,pi)=>{ if((res.assign[`${s}_${pi}`]||[]).includes(name)) c++; });}
+      html+=`<td>${(c*slotH)||""}</td>`;
+    });
+    html+=`<td><b>${res.loads[name]*slotH}</b></td></tr>`;
+  });
+  html+="</table></div>";
+  area.innerHTML=html;
+}
+load();
+</script>
+</body>
+</html>

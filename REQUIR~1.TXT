@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+ortools
+pydantic
+openpyxl
+sqlalchemy
+psycopg[binary]
