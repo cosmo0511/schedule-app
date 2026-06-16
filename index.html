@@ -73,8 +73,8 @@
   <div class="card links" id="result" style="display:none">
     <h3>✅ 만들어졌어요!</h3>
     <p class="hint">참가자에게 아래 <b>참가자 링크</b>를 공유하세요. <b>관리자 링크</b>는 본인만 보관하세요(배정 실행용).</p>
-    <div><b>참가자 링크</b><a id="plink" target="_blank"></a></div>
-    <div><b>관리자 링크</b><a id="alink" target="_blank"></a></div>
+    <div><b>참가자 링크</b> <button class="btn sm" onclick="copyText('plink', this)">복사</button><a id="plink" target="_blank"></a></div>
+    <div><b>관리자 링크</b> <button class="btn sm" onclick="copyText('alink', this)">복사</button><a id="alink" target="_blank"></a></div>
   </div>
 </div>
 
@@ -106,6 +106,10 @@ addPlace("정문",2,3,"09:00","21:00",true);
 addPlace("후문",1,2,"09:00","17:00",false);
 addPlace("주차장",1,1,"09:00","17:00",false);
 
+function copyText(id, btn){
+  navigator.clipboard.writeText(document.getElementById(id).textContent);
+  btn.textContent="복사됨!"; setTimeout(()=>btn.textContent="복사",1200);
+}
 async function submitEvent(){
   document.getElementById("err").textContent="";
   const places=[...document.querySelectorAll("#places tr")].map(tr=>({
