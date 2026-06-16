@@ -107,6 +107,21 @@ def _solve(config, participants, time_limit=30, required_hard=True):
                     m.Add(st == 0)   # 남은 운영시간 부족 -> 시작 금지
                 starts.append(st)
 
+    # 하루 안에서는 끊김 없이 한 덩어리로 근무 (중간 공백 금지; 장소 이동은 OK)
+    for i in people:
+        for d in range(ndays):
+            dslots = [s for s in range(nslots) if s // nT == d]
+            day_starts = []
+            for idx, s in enumerate(dslots):
+                dw = sum(x[i, s, p] for p in P)       # 그 슬롯 근무 여부(0/1)
+                prev = sum(x[i, dslots[idx - 1], p] for p in P) if idx > 0 else 0
+                ds = m.NewBoolVar(f"dstart_{i}_{s}")
+                m.Add(ds >= dw - prev)
+                m.Add(ds <= dw)
+                m.Add(ds <= 1 - prev)
+                day_starts.append(ds)
+            m.Add(sum(day_starts) <= 1)   # 하루에 근무 시작은 최대 1번 = 한 덩어리
+
     # 필수 장소: 사람마다 그 장소에서 최소 1회(=연속 min_run) 근무
     miss_pen = 0
     visit = {}
