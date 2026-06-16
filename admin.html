@@ -51,7 +51,7 @@
 const parts=location.pathname.split("/");
 const eid=parts[parts.length-1];
 const token=new URLSearchParams(location.search).get("token")||"";
-let cfg=null,nT=0;
+let cfg=null,nT=0,lastResult=null;
 
 async function load(){
   const r=await fetch(`/api/events/${eid}`);
@@ -84,8 +84,9 @@ async function solve(){
 function renderResult(res){
   const area=document.getElementById("resultArea");
   if(!res.feasible){area.innerHTML="<div class='msg err'>조건을 만족하는 배정을 찾지 못했어요. 제약을 완화해보세요.</div>";return;}
+  lastResult=res;
   const days=cfg.days,times=cfg.times,places=cfg.places;
-  let html=`<h2>📋 배정 결과 <a class="btn" style="font-size:13px;padding:8px 14px;text-decoration:none" href="/api/events/${eid}/export.xlsx">⬇ 엑셀 내보내기</a></h2>`;
+  let html=`<h2>📋 배정 결과 <a class="btn" style="font-size:13px;padding:8px 14px;text-decoration:none" href="/api/events/${eid}/export.xlsx">⬇ 엑셀 내보내기</a> <button class="btn" style="font-size:13px;padding:8px 14px" onclick="showPerPerson()">👤 개인별 시간표</button></h2><div id="perPerson"></div>`;
   if(res.unmet_required && res.unmet_required.length){
     html+="<div class='msg err'>⚠️ 필수 장소를 못 채운 사람: "
       + res.unmet_required.map(u=>`${u.name}(${u.place})`).join(", ")
@@ -122,6 +123,30 @@ function renderResult(res){
   });
   html+="</table></div>";
   area.innerHTML=html;
+}
+
+function showPerPerson(){
+  const res=lastResult; if(!res) return;
+  const days=cfg.days,times=cfg.times,places=cfg.places;
+  const slotH=cfg.slot_minutes/60;
+  let h="<h2>👤 개인별 시간표</h2>";
+  Object.keys(res.loads).forEach(name=>{
+    h+=`<div class="day-block"><b style="font-size:15px">${name}</b> <span class="hint">(총 ${res.loads[name]*slotH}시간)</span><div class="scroll"><table class="tt"><tr><th></th>`;
+    days.forEach(d=>h+=`<th>${d}</th>`); h+="</tr>";
+    times.forEach((t,ti)=>{
+      h+=`<tr><td class="time">${t.label}</td>`;
+      days.forEach((dn,di)=>{
+        const s=di*nT+ti;
+        let where=null;
+        places.forEach((p,pi)=>{ if((res.assign[`${s}_${pi}`]||[]).includes(name)) where=p.name; });
+        h+= where? `<td class="fill">${where}</td>` : "<td></td>";
+      });
+      h+="</tr>";
+    });
+    h+="</table></div></div>";
+  });
+  document.getElementById("perPerson").innerHTML=h;
+  document.getElementById("perPerson").scrollIntoView({behavior:"smooth"});
 }
 load();
 </script>
