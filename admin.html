@@ -37,8 +37,9 @@
   </div>
 
   <div class="card">
-    <b>제출 현황</b> <span class="hint">(새로고침하면 갱신)</span>
+    <b>제출 현황</b> <span class="hint">(이름을 누르면 제출한 시간을 볼 수 있어요 · 새로고침하면 갱신)</span>
     <div id="parts" style="margin-top:8px"></div>
+    <div id="submissionView" style="margin-top:10px"></div>
   </div>
 
   <button class="btn" id="solveBtn" onclick="solve()">⚙️ 배정 실행</button>
@@ -51,7 +52,7 @@
 const parts=location.pathname.split("/");
 const eid=parts[parts.length-1];
 const token=new URLSearchParams(location.search).get("token")||"";
-let cfg=null,nT=0,lastResult=null;
+let cfg=null,nT=0,lastResult=null,participantList=[];
 
 async function load(){
   const r=await fetch(`/api/events/${eid}`);
@@ -66,10 +67,25 @@ async function load(){
 }
 
 async function loadParts(){
-  const ps=await (await fetch(`/api/events/${eid}/participants`)).json();
+  participantList=await (await fetch(`/api/events/${eid}/participants`)).json();
   const el=document.getElementById("parts");
-  el.innerHTML = ps.length? ps.map(p=>`<span class="ptag">${p.name} · ${p.slots.length}칸</span>`).join("")
-                          : "<span class='hint'>아직 제출한 사람이 없어요.</span>";
+  el.innerHTML = participantList.length
+    ? participantList.map((p,idx)=>`<span class="ptag" style="cursor:pointer" onclick="showSubmission(${idx})">${p.name} · ${p.slots.length}칸</span>`).join("")
+    : "<span class='hint'>아직 제출한 사람이 없어요.</span>";
+}
+
+function showSubmission(idx){
+  const p=participantList[idx]; if(!p||!cfg) return;
+  const days=cfg.days,times=cfg.times,set=new Set(p.slots);
+  let h=`<b>🗓️ ${p.name} 님이 제출한 가능시간 (${p.slots.length}칸)</b><div class="scroll"><table class="tt"><tr><th></th>`;
+  days.forEach(d=>h+=`<th>${d}</th>`); h+="</tr>";
+  times.forEach((t,ti)=>{
+    h+=`<tr><td class="time">${t.label}</td>`;
+    days.forEach((dn,di)=>{ h+= set.has(di*nT+ti)? '<td class="fill"></td>' : '<td></td>'; });
+    h+="</tr>";
+  });
+  h+="</table></div>";
+  document.getElementById("submissionView").innerHTML=h;
 }
 
 async function solve(){
