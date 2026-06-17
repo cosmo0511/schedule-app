@@ -10,6 +10,7 @@ config + participants 를 받아 배정 결과를 돌려준다.
   - 다른 장소로 이동 가능하되 거기서도 min_run 이상 연속
   - 하루 총 근무 max_day 슬롯 이하
 """
+import os
 from ortools.sat.python import cp_model
 
 
@@ -107,20 +108,24 @@ def _solve(config, participants, time_limit=30, required_hard=True):
                     m.Add(st == 0)   # 남은 운영시간 부족 -> 시작 금지
                 starts.append(st)
 
-    # 하루 안에서는 끊김 없이 한 덩어리로 근무 (중간 공백 금지; 장소 이동은 OK)
+    # 하루 안에서 끊김 없이 한 덩어리로 근무하도록 '유도' (소프트: 빈칸을 늘리진 않음)
+    # 하루에 근무 덩어리가 2개 이상이면 그 만큼 페널티 -> 가능하면 한 덩어리로 붙임
+    day_gap_pen = 0
     for i in people:
         for d in range(ndays):
             dslots = [s for s in range(nslots) if s // nT == d]
             day_starts = []
             for idx, s in enumerate(dslots):
-                dw = sum(x[i, s, p] for p in P)       # 그 슬롯 근무 여부(0/1)
+                dw = sum(x[i, s, p] for p in P)
                 prev = sum(x[i, dslots[idx - 1], p] for p in P) if idx > 0 else 0
                 ds = m.NewBoolVar(f"dstart_{i}_{s}")
                 m.Add(ds >= dw - prev)
                 m.Add(ds <= dw)
                 m.Add(ds <= 1 - prev)
                 day_starts.append(ds)
-            m.Add(sum(day_starts) <= 1)   # 하루에 근무 시작은 최대 1번 = 한 덩어리
+            extra = m.NewIntVar(0, len(dslots), f"daygap_{i}_{d}")
+            m.Add(extra >= sum(day_starts) - 1)   # 덩어리 2개째부터 페널티
+            day_gap_pen += extra
 
     # 필수 장소: 사람마다 그 장소에서 최소 1회(=연속 min_run) 근무
     miss_pen = 0
@@ -149,12 +154,14 @@ def _solve(config, participants, time_limit=30, required_hard=True):
     W = config.get("weights", {})
     m.Minimize(W.get("required", 5000) * miss_pen
                + W.get("cover", 1000) * cover_pen
+               + W.get("gap", 60) * day_gap_pen
                + W.get("balance", 30) * (lmax - lmin)
                + W.get("frag", 8) * sum(starts))
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit
-    solver.parameters.num_search_workers = 8
+    # 약한 무료 서버(0.1 CPU)에선 워커 수를 줄이는 게 더 빠를 수 있어 env로 조절
+    solver.parameters.num_search_workers = int(os.environ.get("SOLVE_WORKERS", "8"))
     status = solver.Solve(m)
 
     feasible = status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
